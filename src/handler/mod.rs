@@ -1,5 +1,7 @@
+use std::net::SocketAddr;
 use std::os::unix::prelude::OsStrExt;
 
+use log::info;
 use tokio::fs::File;
 use tokio::net::TcpStream;
 
@@ -9,17 +11,13 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const CRLF: &str = "\r\n" ;
 
 
-pub async fn handle_request(mut stream: TcpStream) { //
+pub async fn handle_request(mut stream: TcpStream, address: SocketAddr) { 
 
     let  mut buf = [0;4096];
 
     stream.read(&mut buf).await;   //http请求 一次读完，不用循环读
 
-    let write = |(contents,status)|  write(stream,contents,status) ;
-
-
-    //println!("服务器日志:接受到的HTTP请求报文：\n{}",buf.to_string());
-    
+    let mut write = |(contents,status)|  write(stream,contents,status) ;
      
     //路由处理
     if matched(& buf,"/index") {
@@ -28,10 +26,13 @@ pub async fn handle_request(mut stream: TcpStream) { //
         write(handle_404().await).await;
     }
 
-
+    info!("客户端:[{}]处理完毕 ",address);
+    unsafe {
+        *CLIENT_NUMBER.write().await-=1;
+    }
 }
 
-//路由匹配 因为只是对一个buf处理（在处理时，一直都需要cpu来运行），不涉及io操作，不会阻塞线程，所有设置为同步函数即可
+//路由匹配 因为只是对一个buf处理（在处理时，一直都需要cpu来运行），不涉及io操作，不会阻塞线程，所以设置为同步函数即可
 fn matched(buf: & [u8;4096], route: &str) -> bool {
     let s = format!("GET {} HTTP/1.1{}",route,CRLF);
     buf.starts_with(s.as_bytes())
@@ -74,6 +75,8 @@ async fn write(mut stream: TcpStream, contents: String, status: String) {
 
 }
 use std::fmt::Write;
+
+use crate::CLIENT_NUMBER;
 
 #[test]
 fn test_u8_array_to_string(){
